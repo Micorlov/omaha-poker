@@ -1,0 +1,839 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Omaha Poker — Admin</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: #0a0f1a; color: #e2e8f0; min-height: 100vh;
+        }
+
+        .auth-gate {
+            display: flex; align-items: center; justify-content: center;
+            min-height: 100vh; flex-direction: column; gap: 20px; padding: 24px; text-align: center;
+        }
+        .auth-gate h1 { color: #fbbf24; font-size: 1.8em; }
+        .auth-gate .denied { color: #f87171; font-size: 16px; display: none; }
+        .auth-gate button {
+            background: #fff; color: #333; border: none; border-radius: 40px;
+            padding: 14px 32px; font-size: 16px; font-weight: 600;
+            cursor: pointer; display: flex; align-items: center; gap: 10px;
+        }
+
+        .app { display: none; }
+        .app.visible { display: block; }
+
+        .topbar {
+            background: #111827; border-bottom: 1px solid #1e293b;
+            padding: 14px 30px; display: flex; align-items: center; justify-content: space-between;
+            position: sticky; top: 0; z-index: 100; flex-wrap: wrap; gap: 10px;
+        }
+        .topbar h1 { font-size: 18px; color: #fbbf24; font-weight: 700; }
+        .topbar-right { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+        .topbar-right img { width: 28px; height: 28px; border-radius: 50%; }
+        .topbar-right span { font-size: 13px; color: #94a3b8; }
+        .topbar-right a, .topbar-right button {
+            background: none; border: 1px solid #334155; color: #94a3b8;
+            padding: 5px 12px; border-radius: 6px; font-size: 12px;
+            cursor: pointer; text-decoration: none;
+        }
+        .topbar-right a:hover, .topbar-right button:hover { border-color: #fbbf24; color: #fbbf24; }
+
+        .content { max-width: 1180px; margin: 0 auto; padding: 24px; }
+
+        .tabs {
+            display: flex; gap: 4px; margin-bottom: 24px; flex-wrap: wrap;
+            background: #111827; border-radius: 10px; padding: 4px;
+            border: 1px solid #1e293b;
+        }
+        .tab {
+            padding: 10px 20px; border-radius: 8px; font-size: 14px; font-weight: 500;
+            cursor: pointer; color: #64748b; transition: all 0.2s; border: none; background: none;
+        }
+        .tab:hover { color: #cbd5e1; }
+        .tab.active { background: #1e293b; color: #fbbf24; }
+
+        .stats-grid {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+            gap: 14px; margin-bottom: 24px;
+        }
+        .stat-card {
+            background: #111827; border: 1px solid #1e293b; border-radius: 12px; padding: 18px;
+        }
+        .stat-card .label { font-size: 11px; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
+        .stat-card .value { font-size: 26px; font-weight: 700; color: #fbbf24; }
+        .stat-card .sub { font-size: 12px; color: #475569; margin-top: 4px; }
+
+        .panel {
+            background: #111827; border: 1px solid #1e293b; border-radius: 12px;
+            overflow: hidden; margin-bottom: 20px;
+        }
+        .panel-header {
+            padding: 14px 20px; border-bottom: 1px solid #1e293b;
+            display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;
+        }
+        .panel-header h2 { font-size: 15px; font-weight: 600; color: #e2e8f0; }
+        .panel-header .badge {
+            background: #1e293b; color: #94a3b8; padding: 3px 10px;
+            border-radius: 20px; font-size: 12px;
+        }
+        .panel-header button {
+            background: none; border: 1px solid #334155; color: #94a3b8;
+            padding: 5px 12px; border-radius: 6px; font-size: 12px; cursor: pointer;
+        }
+        .panel-header button:hover { border-color: #fbbf24; color: #fbbf24; }
+        .panel-body { padding: 16px 20px; }
+
+        table { width: 100%; border-collapse: collapse; }
+        .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+        th {
+            text-align: left; padding: 10px 16px; font-size: 11px; white-space: nowrap;
+            text-transform: uppercase; letter-spacing: 0.5px; color: #475569;
+            background: #0f172a; border-bottom: 1px solid #1e293b;
+        }
+        td {
+            padding: 10px 16px; border-bottom: 1px solid rgba(30,41,59,0.5);
+            font-size: 13px; color: #cbd5e1;
+        }
+        tr:hover td { background: rgba(251,191,36,0.03); }
+
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+
+        .empty-state { text-align: center; padding: 40px; color: #475569; font-size: 14px; }
+
+        .search-bar, .sort-select {
+            background: #0f172a; border: 1px solid #1e293b; border-radius: 8px;
+            padding: 8px 14px; color: #e2e8f0; font-size: 13px;
+        }
+        .search-bar { width: 260px; }
+        .search-bar:focus, .sort-select:focus { outline: none; border-color: #fbbf24; }
+
+        .btn-action {
+            background: none; border: 1px solid #334155; border-radius: 4px;
+            padding: 4px 10px; font-size: 11px; cursor: pointer; font-weight: 500;
+            transition: all 0.2s; color: #f87171; border-color: rgba(248, 113, 113, 0.4);
+        }
+        .btn-action:hover { background: rgba(248, 113, 113, 0.1); border-color: #f87171; }
+
+        .feature-list { padding: 6px 20px; }
+        .feature-row {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 14px 0; border-bottom: 1px solid rgba(30,41,59,0.5);
+        }
+        .feature-row:last-child { border-bottom: none; }
+        .feature-row-label { font-size: 14px; color: #e2e8f0; font-weight: 500; }
+        .feature-row-sub { font-size: 12px; color: #64748b; margin-top: 2px; }
+        .feature-switch { position: relative; display: inline-block; width: 42px; height: 24px; flex-shrink: 0; }
+        .feature-switch input { opacity: 0; width: 0; height: 0; }
+        .feature-switch-track {
+            position: absolute; cursor: pointer; inset: 0; background: #334155;
+            border-radius: 24px; transition: 0.2s;
+        }
+        .feature-switch-track::before {
+            content: ""; position: absolute; width: 18px; height: 18px; left: 3px; bottom: 3px;
+            background: #e2e8f0; border-radius: 50%; transition: 0.2s;
+        }
+        .feature-switch input:checked + .feature-switch-track { background: #16a34a; }
+        .feature-switch input:checked + .feature-switch-track::before { transform: translateX(18px); }
+
+        .event-form {
+            display: flex; flex-wrap: wrap; gap: 8px; padding: 16px 20px;
+            border-bottom: 1px solid #1e293b; align-items: center;
+        }
+        .event-form input, .event-form select {
+            background: #0f172a; border: 1px solid #1e293b; border-radius: 6px;
+            padding: 7px 10px; color: #e2e8f0; font-size: 13px;
+        }
+        .event-form input:focus, .event-form select:focus { outline: none; border-color: #fbbf24; }
+        .event-form button {
+            background: #16a34a; border: none; color: #fff; padding: 8px 16px;
+            border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer;
+        }
+        .event-form button:hover { background: #15803d; }
+
+        .offline-note {
+            font-size: 12px; color: #64748b; padding: 12px 20px;
+            border-top: 1px solid #1e293b;
+        }
+
+        /* Horizontal bar rows for the Analytics tab. The bar is a nested
+           fill rather than a background-gradient row, so a long label
+           never competes with the bar for width. */
+        .bar-row {
+            display: flex; align-items: center; gap: 12px; padding: 7px 0;
+            font-size: 13px; border-bottom: 1px solid rgba(30,41,59,0.5);
+        }
+        .bar-row:last-child { border-bottom: none; }
+        .bar-row .bar-label { width: 140px; flex-shrink: 0; color: #cbd5e1; }
+        .bar-row .bar-track { flex: 1; background: #0f172a; border-radius: 4px; height: 18px; overflow: hidden; }
+        .bar-row .bar-fill { height: 100%; background: linear-gradient(90deg, #b45309, #fbbf24); }
+        .bar-row .bar-value { width: 100px; text-align: right; color: #94a3b8; font-variant-numeric: tabular-nums; }
+
+        .moved-card { padding: 22px 20px; }
+        .moved-card p { margin-bottom: 14px; color: #94a3b8; line-height: 1.6; }
+        .moved-card a.cta {
+            display: inline-block; background: #16a34a; color: #fff; text-decoration: none;
+            padding: 11px 24px; border-radius: 8px; font-size: 14px; font-weight: 600;
+        }
+
+        .setup-note {
+            background: rgba(251,191,36,0.08); border: 1px solid rgba(251,191,36,0.3);
+            border-radius: 10px; padding: 14px 18px; font-size: 13px; color: #fcd34d;
+            margin: 24px; line-height: 1.5; max-width: 520px;
+        }
+        .setup-note code { background: rgba(0,0,0,0.3); padding: 1px 6px; border-radius: 4px; }
+
+        @media (max-width: 700px) {
+            .content { padding: 14px; }
+            .stats-grid { grid-template-columns: repeat(2, 1fr); }
+            .topbar { padding: 12px 16px; }
+            th, td { padding: 8px 10px; font-size: 12px; }
+            .event-form { flex-direction: column; align-items: stretch; }
+            .search-bar { width: 100%; }
+        }
+    </style>
+</head>
+<body>
+    <div class="auth-gate" id="auth-gate">
+        <h1>🎲 Omaha Poker — Admin</h1>
+        <button onclick="doSignIn()">
+            <svg viewBox="0 0 24 24" width="20" height="20"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.27-4.74 3.27-8.1z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18A9.82 9.82 0 0 0 1.18 12c0 1.6.38 3.11 1 4.47l3.66-2.38z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.31c.87-2.6 3.3-4 6.16-4z"/></svg>
+            Sign in with Google
+        </button>
+        <div class="denied" id="denied-msg">Access denied — admin only.</div>
+    </div>
+
+    <div class="app" id="app">
+        <div class="topbar">
+            <h1>🎲 Omaha Poker — Admin</h1>
+            <div class="topbar-right">
+                <img id="topbar-photo" src="" alt="">
+                <span id="topbar-name"></span>
+                <a href="push.html">Push Center ↗</a>
+                <button onclick="firebase.auth().signOut()">Sign Out</button>
+            </div>
+        </div>
+
+        <div class="content">
+            <div class="tabs">
+                <button class="tab active" onclick="switchTab('overview')">Overview</button>
+                <button class="tab" onclick="switchTab('users')">Users</button>
+                <button class="tab" onclick="switchTab('analytics')">Analytics</button>
+                <button class="tab" onclick="switchTab('events')">Events</button>
+                <button class="tab" onclick="switchTab('features')">Features</button>
+                <button class="tab" onclick="switchTab('push')">Push</button>
+            </div>
+
+            <!-- OVERVIEW -->
+            <div class="tab-content active" id="tab-overview">
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+                    <span id="stats-updated" style="color:#64748b;font-size:12px">—</span>
+                    <button onclick="loadAll()">↻ Refresh</button>
+                </div>
+                <div class="stats-grid">
+                    <div class="stat-card"><div class="label">Total Installs</div><div class="value" id="s-installs">—</div></div>
+                    <div class="stat-card"><div class="label">Active Today</div><div class="value" id="s-today">—</div><div class="sub">played a hand (UTC day)</div></div>
+                    <div class="stat-card"><div class="label">Active 7d (WAU)</div><div class="value" id="s-wau">—</div></div>
+                    <div class="stat-card"><div class="label">New Installs (7d)</div><div class="value" id="s-new-7d">—</div><div class="sub" id="s-new-today">—</div></div>
+                    <div class="stat-card"><div class="label">New Installs (30d)</div><div class="value" id="s-new-30d">—</div></div>
+                    <div class="stat-card"><div class="label">Devices Registered</div><div class="value" id="s-devices">—</div><div class="sub" id="s-devices-sub">for push</div></div>
+                    <div class="stat-card"><div class="label">Hands Dealt</div><div class="value" id="s-hands">—</div><div class="sub">across all players</div></div>
+                    <div class="stat-card"><div class="label">Avg Hands / Player</div><div class="value" id="s-avg-hands">—</div></div>
+                </div>
+
+                <div class="panel">
+                    <div class="panel-header">
+                        <h2>Recent Installs</h2>
+                        <span class="badge" id="recent-count">0</span>
+                    </div>
+                    <div class="table-scroll"><table>
+                        <thead><tr><th>Install</th><th>Country</th><th>Platform</th><th>Version</th><th>First Seen</th><th>Last Played</th></tr></thead>
+                        <tbody id="recent-body"><tr><td colspan="6" class="empty-state">Loading...</td></tr></tbody>
+                    </table></div>
+                </div>
+            </div>
+
+            <!-- USERS -->
+            <div class="tab-content" id="tab-users">
+                <div style="display:flex; flex-wrap:wrap; gap:10px; margin-bottom: 16px;">
+                    <input class="search-bar" type="text" placeholder="Search by install id, country, or version..." id="user-search" oninput="renderUsers()">
+                    <select class="sort-select" id="user-sort" onchange="renderUsers()">
+                        <option value="lastPlayed">Sort: Last played</option>
+                        <option value="hands">Sort: Hands played</option>
+                        <option value="balance">Sort: Balance</option>
+                        <option value="created">Sort: Newest install</option>
+                        <option value="net">Sort: Lifetime net chips</option>
+                    </select>
+                </div>
+                <div class="panel">
+                    <div class="panel-header">
+                        <h2>All Users</h2>
+                        <span class="badge" id="users-count">0</span>
+                    </div>
+                    <div class="table-scroll"><table>
+                        <thead><tr>
+                            <th>Install</th><th>Country</th><th>Platform</th><th>Version</th>
+                            <th>Hands</th><th>Win %</th><th>Balance</th><th>Net P&amp;L</th><th>Last Played</th><th>Devices</th>
+                        </tr></thead>
+                        <tbody id="users-body"><tr><td colspan="10" class="empty-state">Loading...</td></tr></tbody>
+                    </table></div>
+                </div>
+            </div>
+
+            <!-- ANALYTICS -->
+            <div class="tab-content" id="tab-analytics">
+                <div class="panel">
+                    <div class="panel-header"><h2>📈 New Installs per Week</h2></div>
+                    <div class="panel-body" id="bars-weeks"></div>
+                </div>
+                <div class="panel">
+                    <div class="panel-header"><h2>📆 New Installs per Month</h2></div>
+                    <div class="panel-body" id="bars-months"></div>
+                </div>
+                <div class="panel">
+                    <div class="panel-header"><h2>🌍 Countries</h2></div>
+                    <div class="panel-body" id="bars-countries"></div>
+                </div>
+                <div class="panel">
+                    <div class="panel-header"><h2>📦 App Versions</h2></div>
+                    <div class="panel-body" id="bars-versions"></div>
+                </div>
+                <div class="panel">
+                    <div class="panel-header"><h2>📱 Platforms</h2></div>
+                    <div class="panel-body" id="bars-platforms"></div>
+                </div>
+                <div class="panel">
+                    <div class="panel-header"><h2>📅 Retention by Cohort Age</h2></div>
+                    <div class="panel-body">
+                        <div style="font-size:12px; color:#475569; margin-bottom:12px;">
+                            Of installs first seen in each age window, the share that played a hand in the last 7 days.
+                            A "current activity by cohort" view, not true Dn retention — this app keeps no per-day event log.
+                        </div>
+                        <div id="bars-retention"></div>
+                    </div>
+                </div>
+                <div class="panel">
+                    <div class="panel-header"><h2>🎴 Hands Played per Player</h2></div>
+                    <div class="panel-body" id="bars-handsdist"></div>
+                </div>
+                <div class="panel">
+                    <div class="panel-header"><h2>💰 Chip Balance Spread</h2></div>
+                    <div class="panel-body" id="bars-balance"></div>
+                </div>
+                <div class="panel">
+                    <div class="panel-header"><h2>🏆 Best Hands Made</h2></div>
+                    <div class="panel-body" id="bars-besthands"></div>
+                </div>
+            </div>
+
+            <!-- EVENTS -->
+            <div class="tab-content" id="tab-events">
+                <div class="panel">
+                    <div class="panel-header">
+                        <h2>🎉 Limited-Time Events</h2>
+                        <span class="badge" id="events-count">0</span>
+                    </div>
+                    <div class="event-form">
+                        <input id="ev-name" placeholder="Event name (e.g. Weekend Double Bonus)" style="flex:2; min-width:200px;">
+                        <input id="ev-emoji" placeholder="🎉" maxlength="4" style="width:56px;">
+                        <select id="ev-applies-to" title="Which bonus reward this event multiplies">
+                            <option value="">All bonus rewards</option>
+                            <option value="dailyBonus">Daily Bonus</option>
+                            <option value="bonusChips">Bonus Chips</option>
+                            <option value="missionReward">Mission Reward</option>
+                            <option value="achievement">Achievement</option>
+                        </select>
+                        <input id="ev-mult" type="number" step="0.5" min="1" value="2" title="Multiplier" style="width:70px;">
+                        <input id="ev-start" type="datetime-local" title="Starts">
+                        <input id="ev-end" type="datetime-local" title="Ends">
+                        <button onclick="createEvent()">Create Event</button>
+                    </div>
+                    <div class="table-scroll"><table>
+                        <thead><tr><th>Event</th><th>Applies To</th><th>×</th><th>Starts</th><th>Ends</th><th>Status</th><th>Actions</th></tr></thead>
+                        <tbody id="events-body"><tr><td colspan="7" class="empty-state">Loading...</td></tr></tbody>
+                    </table></div>
+                </div>
+            </div>
+
+            <!-- FEATURES -->
+            <div class="tab-content" id="tab-features">
+                <div class="panel">
+                    <div class="panel-header">
+                        <h2>Feature Toggles</h2>
+                        <span class="badge" id="features-status">—</span>
+                    </div>
+                    <div class="feature-list" id="feature-toggle-list"></div>
+                    <div class="offline-note">
+                        The app caches the last value it fetched and falls back to "on" for
+                        everything if it has never reached Firestore — a toggle here reaches
+                        installs the next time they foreground with a connection, never blocking
+                        offline play.
+                    </div>
+                </div>
+            </div>
+
+            <!-- PUSH (moved to its own page — composing, targeting and delivery
+                 logs need a service account, which this browser page never holds) -->
+            <div class="tab-content" id="tab-push">
+                <div class="panel">
+                    <div class="panel-header"><h2>🔔 Push Center has moved</h2></div>
+                    <div class="moved-card">
+                        <p>
+                            Composing, targeting, scheduling and delivery logs for push notifications
+                            live in the dedicated Push Center, which queues campaigns in Firestore for
+                            the GitHub Actions poller (<code>scripts/push/poll.js</code>) to deliver.
+                        </p>
+                        <a class="cta" href="push.html">Open Push Center →</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    var firebaseConfig = {
+        apiKey: "AIzaSyCLv54ToWnFQTvKr12RejNP0gXSSvFsCwo",
+        authDomain: "omaha-poker-bb153.firebaseapp.com",
+        projectId: "omaha-poker-bb153",
+        storageBucket: "omaha-poker-bb153.firebasestorage.app",
+        messagingSenderId: "752060069518",
+        appId: "1:752060069518:web:b81d5aa6d7fa615ce2fbdf"
+    };
+    firebase.initializeApp(firebaseConfig);
+    var auth = firebase.auth();
+    var db = firebase.firestore();
+    var ADMIN_EMAIL = 'micorlov@gmail.com';
+
+    var DEFAULT_FEATURES = {
+        friendsEnabled: true,
+        achievementsEnabled: true,
+        missionsEnabled: true,
+        reviewPromptEnabled: true
+    };
+    var FEATURE_TOGGLES = [
+        { key: 'friendsEnabled', label: 'Friends', sub: 'Friends entry point on the Profile tab' },
+        { key: 'achievementsEnabled', label: 'Achievements', sub: 'Achievements entry point on the Profile tab' },
+        { key: 'missionsEnabled', label: 'Daily Missions', sub: 'Daily Missions card on the Wallet tab' },
+        { key: 'reviewPromptEnabled', label: 'Review Prompt', sub: 'In-app Play Store rating prompt after a personal-best pot' }
+    ];
+    var APPLIES_TO_LABEL = {
+        '': 'All bonus rewards',
+        dailyBonus: 'Daily Bonus',
+        bonusChips: 'Bonus Chips',
+        missionReward: 'Mission Reward',
+        achievement: 'Achievement'
+    };
+    var currentFeatures = Object.assign({}, DEFAULT_FEATURES);
+
+    // Installs + devices are read once per Refresh and reused across
+    // Overview / Users / Analytics. A panel-per-query design would burn
+    // through the Spark plan's 50k-read daily quota in a handful of loads.
+    var installs = [];
+    var devices = [];
+
+    function doSignIn() {
+        auth.signInWithPopup(new firebase.auth.GoogleAuthProvider());
+    }
+
+    auth.onAuthStateChanged(function(user) {
+        if (user && user.email === ADMIN_EMAIL) {
+            document.getElementById('auth-gate').style.display = 'none';
+            document.getElementById('app').classList.add('visible');
+            document.getElementById('topbar-photo').src = user.photoURL || '';
+            document.getElementById('topbar-name').textContent = user.displayName || user.email;
+            loadAll();
+            loadEvents();
+            loadFeatures();
+        } else if (user) {
+            document.getElementById('denied-msg').style.display = 'block';
+        }
+    });
+
+    function switchTab(name) {
+        document.querySelectorAll('.tab').forEach(function(t) { t.classList.remove('active'); });
+        document.querySelectorAll('.tab-content').forEach(function(t) { t.classList.remove('active'); });
+        document.querySelector('.tab[onclick="switchTab(\'' + name + '\')"]').classList.add('active');
+        document.getElementById('tab-' + name).classList.add('active');
+    }
+
+    // --- shared helpers ---
+    function num(value) { return (value || 0).toLocaleString(); }
+    function toDate(value) { return value && value.toDate ? value.toDate() : null; }
+    function timeOf(date) { return date ? date.getTime() : 0; }
+
+    function countBy(list, keyFn) {
+        return list.reduce(function(acc, item) {
+            var key = keyFn(item);
+            acc[key] = (acc[key] || 0) + 1;
+            return acc;
+        }, {});
+    }
+
+    function toBars(counts, limit) {
+        var rows = Object.keys(counts).map(function(key) { return { label: key, value: counts[key] }; })
+            .sort(function(a, b) { return b.value - a.value; });
+        return limit ? rows.slice(0, limit) : rows;
+    }
+
+    /// Renders { label, value }[] as horizontal bars, widest first, into containerId.
+    function renderBars(containerId, rows, formatValue) {
+        var container = document.getElementById(containerId);
+        if (!container) return;
+        container.innerHTML = '';
+        if (!rows.length) {
+            container.innerHTML = '<div class="empty-state">No data yet</div>';
+            return;
+        }
+        var max = rows.reduce(function(m, r) { return Math.max(m, r.value); }, 0) || 1;
+        rows.forEach(function(row) {
+            var el = document.createElement('div');
+            el.className = 'bar-row';
+            el.innerHTML =
+                '<div class="bar-label"></div>' +
+                '<div class="bar-track"><div class="bar-fill"></div></div>' +
+                '<div class="bar-value"></div>';
+            el.children[0].textContent = row.label;
+            el.children[1].firstChild.style.width = Math.max(2, (row.value / max) * 100) + '%';
+            el.children[2].textContent = formatValue ? formatValue(row) : num(row.value);
+            container.appendChild(el);
+        });
+    }
+
+    function dayKeyDaysAgo(days) {
+        var d = new Date();
+        d.setUTCDate(d.getUTCDate() - days);
+        return d.toISOString().slice(0, 10);
+    }
+
+    // --- load installs + devices (shared by Overview / Users / Analytics) ---
+    function loadAll() {
+        var installsP = db.collection('installs').get().then(function(snap) {
+            installs = snap.docs.map(function(doc) {
+                var d = doc.data() || {};
+                return {
+                    uid: doc.id,
+                    country: d.country || '—',
+                    platform: d.platform || 'unknown',
+                    appVersion: d.appVersion || '—',
+                    locale: d.locale || '',
+                    createdAt: toDate(d.createdAt),
+                    lastSeenAt: toDate(d.lastSeenAt),
+                    lastPlayedDate: d.lastPlayedDate || null,
+                    hands: d.hands || 0,
+                    handsWon: d.handsWon || 0,
+                    netChips: d.netChips || 0,
+                    biggestPot: d.biggestPot || 0,
+                    balance: typeof d.balance === 'number' ? d.balance : null,
+                    bestHand: d.bestHand || null
+                };
+            });
+        }).catch(function(err) { console.error('loadInstalls:', err); installs = []; });
+
+        var devicesP = db.collectionGroup('fcmTokens').get().then(function(snap) {
+            devices = snap.docs.map(function(doc) {
+                return { uid: doc.ref.parent.parent.id, platform: doc.get('platform') || 'unknown' };
+            });
+        }).catch(function() { devices = []; });
+
+        return Promise.all([installsP, devicesP]).then(function() {
+            renderOverview();
+            renderUsers();
+            renderAnalytics();
+        });
+    }
+
+    // --- overview ---
+    function renderOverview() {
+        var today = dayKeyDaysAgo(0);
+        var weekAgo = dayKeyDaysAgo(7);
+        var now = Date.now();
+
+        document.getElementById('s-installs').textContent = num(installs.length);
+        document.getElementById('s-today').textContent = num(
+            installs.filter(function(p) { return p.lastPlayedDate === today; }).length
+        );
+        document.getElementById('s-wau').textContent = num(
+            installs.filter(function(p) { return p.lastPlayedDate && p.lastPlayedDate >= weekAgo; }).length
+        );
+
+        var dated = installs.filter(function(p) { return p.createdAt; });
+        var new7d = dated.filter(function(p) { return p.createdAt.getTime() > now - 7 * 86400000; }).length;
+        var new30d = dated.filter(function(p) { return p.createdAt.getTime() > now - 30 * 86400000; }).length;
+        var newToday = dated.filter(function(p) { return p.createdAt.toISOString().slice(0, 10) === today; }).length;
+        document.getElementById('s-new-7d').textContent = num(new7d);
+        document.getElementById('s-new-today').textContent = newToday + ' today';
+        document.getElementById('s-new-30d').textContent = num(new30d);
+
+        document.getElementById('s-devices').textContent = num(devices.length);
+        var byPlatform = countBy(devices, function(d) { return d.platform; });
+        var parts = Object.keys(byPlatform).sort().map(function(k) { return byPlatform[k] + ' ' + k; });
+        document.getElementById('s-devices-sub').textContent = parts.length ? parts.join(' · ') + ' for push' : 'none registered yet';
+
+        var totalHands = installs.reduce(function(sum, p) { return sum + p.hands; }, 0);
+        var withHands = installs.filter(function(p) { return p.hands > 0; }).length;
+        document.getElementById('s-hands').textContent = num(totalHands);
+        document.getElementById('s-avg-hands').textContent = withHands ? Math.round(totalHands / withHands) : '—';
+
+        var stamp = document.getElementById('stats-updated');
+        if (stamp) stamp.textContent = 'Figures as of ' + new Date().toLocaleTimeString();
+
+        var recent = dated.slice().sort(function(a, b) { return timeOf(b.createdAt) - timeOf(a.createdAt); }).slice(0, 10);
+        var body = document.getElementById('recent-body');
+        document.getElementById('recent-count').textContent = recent.length;
+        if (!recent.length) {
+            body.innerHTML = '<tr><td colspan="6" class="empty-state">No installs yet</td></tr>';
+            return;
+        }
+        body.innerHTML = '';
+        recent.forEach(function(p) {
+            var tr = document.createElement('tr');
+            tr.innerHTML =
+                '<td>' + p.uid.slice(0, 10) + '…</td>' +
+                '<td>' + p.country + '</td>' +
+                '<td>' + p.platform + '</td>' +
+                '<td>' + p.appVersion + '</td>' +
+                '<td>' + p.createdAt.toLocaleDateString() + '</td>' +
+                '<td>' + (p.lastPlayedDate || 'never') + '</td>';
+            body.appendChild(tr);
+        });
+    }
+
+    // --- users table ---
+    function renderUsers() {
+        var query = (document.getElementById('user-search').value || '').trim().toLowerCase();
+        var sort = document.getElementById('user-sort').value;
+        var deviceCounts = countBy(devices, function(d) { return d.uid; });
+
+        var filtered = installs.filter(function(p) {
+            if (!query) return true;
+            return [p.uid, p.country, p.appVersion, p.platform, p.locale].join(' ').toLowerCase().indexOf(query) !== -1;
+        });
+
+        var sorters = {
+            lastPlayed: function(a, b) {
+                var bd = b.lastPlayedDate || '', ad = a.lastPlayedDate || '';
+                return bd < ad ? 1 : bd > ad ? -1 : 0;
+            },
+            hands: function(a, b) { return b.hands - a.hands; },
+            balance: function(a, b) { return (b.balance || 0) - (a.balance || 0); },
+            created: function(a, b) { return timeOf(b.createdAt) - timeOf(a.createdAt); },
+            net: function(a, b) { return b.netChips - a.netChips; }
+        };
+        filtered.sort(sorters[sort] || sorters.lastPlayed);
+
+        document.getElementById('users-count').textContent = filtered.length;
+        var body = document.getElementById('users-body');
+        body.innerHTML = '';
+        if (!filtered.length) {
+            body.innerHTML = '<tr><td colspan="10" class="empty-state">' +
+                (installs.length ? 'No users match this filter' : 'No users yet') + '</td></tr>';
+            return;
+        }
+
+        filtered.slice(0, 500).forEach(function(p) {
+            var netColor = p.netChips < 0 ? '#f87171' : '#4ade80';
+            var devCount = deviceCounts[p.uid] || 0;
+            var tr = document.createElement('tr');
+            tr.innerHTML =
+                '<td>' + p.uid.slice(0, 10) + '…</td>' +
+                '<td>' + p.country + '</td>' +
+                '<td>' + p.platform + '</td>' +
+                '<td>' + p.appVersion + '</td>' +
+                '<td>' + num(p.hands) + '</td>' +
+                '<td>' + (p.hands ? Math.round((p.handsWon / p.hands) * 100) + '%' : '—') + '</td>' +
+                '<td>' + (p.balance === null ? '—' : num(p.balance)) + '</td>' +
+                '<td style="color:' + netColor + '">' + (p.netChips > 0 ? '+' : '') + num(p.netChips) + '</td>' +
+                '<td>' + (p.lastPlayedDate || 'never') + '</td>' +
+                '<td style="color:' + (devCount ? '#4ade80' : '#475569') + '">' + (devCount || '—') + '</td>';
+            body.appendChild(tr);
+        });
+    }
+
+    // --- analytics ---
+    function renderAnalytics() {
+        var dated = installs.filter(function(p) { return p.createdAt; });
+
+        renderBars('bars-weeks', lastNBuckets(dated, 12, function(date) {
+            var d = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+            var dayOfWeek = (d.getUTCDay() + 6) % 7;
+            d.setUTCDate(d.getUTCDate() - dayOfWeek);
+            return d.toISOString().slice(0, 10);
+        }));
+        renderBars('bars-months', lastNBuckets(dated, 12, function(date) { return date.toISOString().slice(0, 7); }));
+        renderBars('bars-countries', toBars(countBy(installs, function(p) { return p.country; }), 15));
+        renderBars('bars-versions', toBars(countBy(installs, function(p) { return p.appVersion; })));
+        renderBars('bars-platforms', toBars(countBy(installs, function(p) { return p.platform; })));
+
+        renderRetention();
+
+        renderBars('bars-handsdist', bucketize(
+            installs.map(function(p) { return p.hands; }),
+            [0, 1, 5, 20, 50, 200],
+            function(low, high) { return low === 0 && high === 1 ? '0 hands' : (high ? low + '–' + (high - 1) : low + '+'); }
+        ));
+        renderBars('bars-balance', bucketize(
+            installs.filter(function(p) { return p.balance !== null; }).map(function(p) { return p.balance; }),
+            [0, 1000, 5000, 10000, 25000, 100000],
+            function(low, high) { return high ? num(low) + '–' + num(high - 1) : num(low) + '+'; }
+        ));
+        var bestHands = installs.filter(function(p) { return p.bestHand; });
+        renderBars('bars-besthands', toBars(countBy(bestHands, function(p) { return p.bestHand; }), 12));
+    }
+
+    function lastNBuckets(list, n, keyFn) {
+        var counts = countBy(list, function(item) { return keyFn(item.createdAt); });
+        return Object.keys(counts).sort().slice(-n).map(function(key) { return { label: key, value: counts[key] }; });
+    }
+
+    function bucketize(values, edges, labelFn) {
+        return edges.map(function(low, index) {
+            var high = edges[index + 1];
+            var count = values.filter(function(v) { return v >= low && (high === undefined || v < high); }).length;
+            return { label: labelFn(low, high), value: count };
+        });
+    }
+
+    /// "Current activity by cohort" — for installs first seen in an age
+    /// window, the share still playing in the last 7 days. Not true Dn
+    /// retention, which would need a per-day event log the app doesn't keep.
+    function renderRetention() {
+        var windows = [
+            { label: '1–7 days old', min: 1, max: 7 },
+            { label: '8–14 days old', min: 8, max: 14 },
+            { label: '15–30 days old', min: 15, max: 30 },
+            { label: '31–90 days old', min: 31, max: 90 },
+            { label: '90+ days old', min: 91, max: 100000 }
+        ];
+        var activeSince = dayKeyDaysAgo(7);
+        var now = Date.now();
+        var rows = windows.map(function(w) {
+            var cohort = installs.filter(function(p) {
+                if (!p.createdAt) return false;
+                var ageDays = Math.floor((now - p.createdAt.getTime()) / 86400000);
+                return ageDays >= w.min && ageDays <= w.max;
+            });
+            var retained = cohort.filter(function(p) { return p.lastPlayedDate && p.lastPlayedDate >= activeSince; });
+            return {
+                label: w.label,
+                value: cohort.length ? Math.round((retained.length / cohort.length) * 100) : 0,
+                cohortSize: cohort.length,
+                retainedCount: retained.length
+            };
+        }).filter(function(row) { return row.cohortSize > 0; });
+
+        renderBars('bars-retention', rows, function(row) {
+            return row.value + '% (' + row.retainedCount + '/' + row.cohortSize + ')';
+        });
+    }
+
+    // --- feature flags ---
+    function loadFeatures() {
+        db.collection('config').doc('features').get().then(function(doc) {
+            currentFeatures = Object.assign({}, DEFAULT_FEATURES, doc.exists ? doc.data() : {});
+            document.getElementById('features-status').textContent = doc.exists ? 'Configured' : 'Using defaults';
+            renderFeatureToggles();
+        }).catch(function(err) {
+            console.error('loadFeatures:', err);
+            document.getElementById('features-status').textContent = 'Error loading';
+        });
+    }
+
+    function renderFeatureToggles() {
+        var list = document.getElementById('feature-toggle-list');
+        list.innerHTML = '';
+        FEATURE_TOGGLES.forEach(function(f) {
+            var row = document.createElement('div');
+            row.className = 'feature-row';
+            var checked = currentFeatures[f.key] !== false;
+            row.innerHTML =
+                '<div><div class="feature-row-label">' + f.label + '</div><div class="feature-row-sub">' + f.sub + '</div></div>' +
+                '<label class="feature-switch">' +
+                '<input type="checkbox" ' + (checked ? 'checked' : '') + ' onchange="toggleFeature(\'' + f.key + '\', this.checked)">' +
+                '<span class="feature-switch-track"></span>' +
+                '</label>';
+            list.appendChild(row);
+        });
+    }
+
+    function toggleFeature(key, value) {
+        currentFeatures[key] = value;
+        db.collection('config').doc('features').set(currentFeatures, { merge: true }).then(function() {
+            document.getElementById('features-status').textContent = 'Configured';
+        }).catch(function(err) {
+            alert('Failed to save: ' + err.message);
+            loadFeatures();
+        });
+    }
+
+    // --- limited-time events ---
+    function loadEvents() {
+        db.collection('events').orderBy('endsAt', 'desc').limit(20).get().then(function(snap) {
+            var body = document.getElementById('events-body');
+            document.getElementById('events-count').textContent = snap.size;
+            if (snap.empty) {
+                body.innerHTML = '<tr><td colspan="7" class="empty-state">No events</td></tr>';
+                return;
+            }
+            body.innerHTML = '';
+            var now = Date.now();
+            snap.forEach(function(doc) {
+                var d = doc.data();
+                var starts = d.startsAt && d.startsAt.toDate ? d.startsAt.toDate() : null;
+                var ends = d.endsAt && d.endsAt.toDate ? d.endsAt.toDate() : null;
+                var status = !starts || !ends ? '?' :
+                    now < starts.getTime() ? 'scheduled' :
+                    now < ends.getTime() ? '🟢 LIVE' : 'ended';
+                var appliesLabel = APPLIES_TO_LABEL[d.appliesTo || ''] || d.appliesTo;
+                var tr = document.createElement('tr');
+                tr.innerHTML =
+                    '<td>' + (d.emoji || '') + ' ' + (d.name || '') + '</td>' +
+                    '<td>' + appliesLabel + '</td>' +
+                    '<td>×' + (d.multiplier || 1) + '</td>' +
+                    '<td>' + (starts ? starts.toLocaleString() : '') + '</td>' +
+                    '<td>' + (ends ? ends.toLocaleString() : '') + '</td>' +
+                    '<td>' + status + '</td>' +
+                    '<td><button class="btn-action" onclick="deleteEvent(\'' + doc.id + '\')">Delete</button></td>';
+                body.appendChild(tr);
+            });
+        }).catch(function(err) { console.error('loadEvents:', err); });
+    }
+
+    function createEvent() {
+        var name = document.getElementById('ev-name').value.trim();
+        var startVal = document.getElementById('ev-start').value;
+        var endVal = document.getElementById('ev-end').value;
+        if (!name || !startVal || !endVal) { alert('Name, start and end are required'); return; }
+        var starts = new Date(startVal);
+        var ends = new Date(endVal);
+        if (ends <= starts) { alert('End must be after start'); return; }
+        db.collection('events').add({
+            name: name,
+            emoji: document.getElementById('ev-emoji').value.trim() || '🎉',
+            multiplier: parseFloat(document.getElementById('ev-mult').value) || 2,
+            appliesTo: document.getElementById('ev-applies-to').value || null,
+            startsAt: firebase.firestore.Timestamp.fromDate(starts),
+            endsAt: firebase.firestore.Timestamp.fromDate(ends),
+            createdAt: firebase.firestore.FieldValue.serverTimestamp()
+        }).then(function() {
+            document.getElementById('ev-name').value = '';
+            loadEvents();
+        }).catch(function(err) { alert('Create failed: ' + err.message); });
+    }
+
+    function deleteEvent(id) {
+        if (!confirm('Delete this event?')) return;
+        db.collection('events').doc(id).delete().then(loadEvents)
+            .catch(function(err) { alert('Delete failed: ' + err.message); });
+    }
+    </script>
+</body>
+</html>
