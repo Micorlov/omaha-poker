@@ -248,6 +248,8 @@
                     <div class="stat-card"><div class="label">Devices Registered</div><div class="value" id="s-devices">—</div><div class="sub" id="s-devices-sub">for push</div></div>
                     <div class="stat-card"><div class="label">Hands Dealt</div><div class="value" id="s-hands">—</div><div class="sub">across all players</div></div>
                     <div class="stat-card"><div class="label">Avg Hands / Player</div><div class="value" id="s-avg-hands">—</div></div>
+                    <div class="stat-card"><div class="label">Avg Play Time / Player</div><div class="value" id="s-avg-playtime">—</div><div class="sub" id="s-avg-playtime-sub">—</div></div>
+                    <div class="stat-card"><div class="label">Total Play Time</div><div class="value" id="s-total-playtime">—</div><div class="sub">all players combined</div></div>
                 </div>
 
                 <div class="panel">
@@ -269,6 +271,7 @@
                     <select class="sort-select" id="user-sort" onchange="renderUsers()">
                         <option value="lastPlayed">Sort: Last played</option>
                         <option value="hands">Sort: Hands played</option>
+                        <option value="playTime">Sort: Play time</option>
                         <option value="balance">Sort: Balance</option>
                         <option value="created">Sort: Newest install</option>
                         <option value="net">Sort: Lifetime net chips</option>
@@ -282,9 +285,9 @@
                     <div class="table-scroll"><table>
                         <thead><tr>
                             <th>Install</th><th>Country</th><th>Platform</th><th>Version</th>
-                            <th>Hands</th><th>Win %</th><th>Balance</th><th>Net P&amp;L</th><th>Last Played</th><th>Devices</th>
+                            <th>Hands</th><th>Play Time</th><th>Launches</th><th>Avg / Launch</th><th>Win %</th><th>Balance</th><th>Net P&amp;L</th><th>Last Played</th><th>Devices</th>
                         </tr></thead>
-                        <tbody id="users-body"><tr><td colspan="10" class="empty-state">Loading...</td></tr></tbody>
+                        <tbody id="users-body"><tr><td colspan="13" class="empty-state">Loading...</td></tr></tbody>
                     </table></div>
                 </div>
             </div>
@@ -324,6 +327,15 @@
                 <div class="panel">
                     <div class="panel-header"><h2>🎴 Hands Played per Player</h2></div>
                     <div class="panel-body" id="bars-handsdist"></div>
+                </div>
+                <div class="panel">
+                    <div class="panel-header"><h2>⏱ Play Time per Player</h2></div>
+                    <div class="panel-body">
+                        <div style="font-size:12px; color:#475569; margin-bottom:12px;">
+                            Total time the app was on screen, per player. Only players on an app build that reports play time are counted.
+                        </div>
+                        <div id="bars-playtime"></div>
+                    </div>
                 </div>
                 <div class="panel">
                     <div class="panel-header"><h2>💰 Chip Balance Spread</h2></div>
@@ -508,6 +520,16 @@
         });
     }
 
+    /// 4500000 -> "1h 15m"; under a minute -> "<1m"; unknown (null) -> "—".
+    function formatDuration(ms) {
+        if (ms === null || ms === undefined) return '—';
+        var totalMin = Math.floor(ms / 60000);
+        if (totalMin < 1) return ms > 0 ? '<1m' : '0m';
+        var h = Math.floor(totalMin / 60);
+        var m = totalMin % 60;
+        return h ? h + 'h ' + m + 'm' : m + 'm';
+    }
+
     function dayKeyDaysAgo(days) {
         var d = new Date();
         d.setUTCDate(d.getUTCDate() - days);
@@ -528,6 +550,10 @@
                     createdAt: toDate(d.createdAt),
                     lastSeenAt: toDate(d.lastSeenAt),
                     lastPlayedDate: d.lastPlayedDate || null,
+                    sessions: d.sessions || 0,
+                    // null, not 0: an older app build never reports play time,
+                    // and "unknown" must not average in as "played for zero".
+                    playTimeMs: typeof d.playTimeMs === 'number' ? d.playTimeMs : null,
                     hands: d.hands || 0,
                     handsWon: d.handsWon || 0,
                     netChips: d.netChips || 0,
@@ -583,6 +609,14 @@
         document.getElementById('s-hands').textContent = num(totalHands);
         document.getElementById('s-avg-hands').textContent = withHands ? Math.round(totalHands / withHands) : '—';
 
+        var timed = installs.filter(function(p) { return p.playTimeMs !== null; });
+        var totalPlayMs = timed.reduce(function(sum, p) { return sum + p.playTimeMs; }, 0);
+        document.getElementById('s-total-playtime').textContent = timed.length ? formatDuration(totalPlayMs) : '—';
+        document.getElementById('s-avg-playtime').textContent = timed.length ? formatDuration(Math.round(totalPlayMs / timed.length)) : '—';
+        document.getElementById('s-avg-playtime-sub').textContent = timed.length
+            ? 'across ' + timed.length + ' tracked player' + (timed.length === 1 ? '' : 's')
+            : 'no player reports it yet';
+
         var stamp = document.getElementById('stats-updated');
         if (stamp) stamp.textContent = 'Figures as of ' + new Date().toLocaleTimeString();
 
@@ -624,6 +658,7 @@
                 return bd < ad ? 1 : bd > ad ? -1 : 0;
             },
             hands: function(a, b) { return b.hands - a.hands; },
+            playTime: function(a, b) { return (b.playTimeMs || 0) - (a.playTimeMs || 0); },
             balance: function(a, b) { return (b.balance || 0) - (a.balance || 0); },
             created: function(a, b) { return timeOf(b.createdAt) - timeOf(a.createdAt); },
             net: function(a, b) { return b.netChips - a.netChips; }
@@ -634,7 +669,7 @@
         var body = document.getElementById('users-body');
         body.innerHTML = '';
         if (!filtered.length) {
-            body.innerHTML = '<tr><td colspan="10" class="empty-state">' +
+            body.innerHTML = '<tr><td colspan="13" class="empty-state">' +
                 (installs.length ? 'No users match this filter' : 'No users yet') + '</td></tr>';
             return;
         }
@@ -649,6 +684,9 @@
                 '<td>' + p.platform + '</td>' +
                 '<td>' + p.appVersion + '</td>' +
                 '<td>' + num(p.hands) + '</td>' +
+                '<td>' + formatDuration(p.playTimeMs) + '</td>' +
+                '<td>' + (p.sessions || '—') + '</td>' +
+                '<td>' + (p.playTimeMs !== null && p.sessions ? formatDuration(Math.round(p.playTimeMs / p.sessions)) : '—') + '</td>' +
                 '<td>' + (p.hands ? Math.round((p.handsWon / p.hands) * 100) + '%' : '—') + '</td>' +
                 '<td>' + (p.balance === null ? '—' : num(p.balance)) + '</td>' +
                 '<td style="color:' + netColor + '">' + (p.netChips > 0 ? '+' : '') + num(p.netChips) + '</td>' +
@@ -679,6 +717,14 @@
             installs.map(function(p) { return p.hands; }),
             [0, 1, 5, 20, 50, 200],
             function(low, high) { return low === 0 && high === 1 ? '0 hands' : (high ? low + '–' + (high - 1) : low + '+'); }
+        ));
+        var MIN = 60000;
+        renderBars('bars-playtime', bucketize(
+            installs.filter(function(p) { return p.playTimeMs !== null; }).map(function(p) { return p.playTimeMs; }),
+            [0, 5 * MIN, 15 * MIN, 30 * MIN, 60 * MIN, 180 * MIN, 600 * MIN],
+            function(low, high) {
+                return high ? formatDuration(low) + ' – ' + formatDuration(high) : formatDuration(low) + '+';
+            }
         ));
         renderBars('bars-balance', bucketize(
             installs.filter(function(p) { return p.balance !== null; }).map(function(p) { return p.balance; }),
