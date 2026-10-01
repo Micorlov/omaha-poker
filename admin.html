@@ -241,6 +241,7 @@
                 </div>
                 <div class="stats-grid">
                     <div class="stat-card"><div class="label">Total Installs</div><div class="value" id="s-installs">—</div></div>
+                    <div class="stat-card"><div class="label">Players Who Ever Played</div><div class="value" id="s-ever-played">—</div><div class="sub" id="s-ever-played-sub">—</div></div>
                     <div class="stat-card"><div class="label">Active Today</div><div class="value" id="s-today">—</div><div class="sub">played a hand (UTC day)</div></div>
                     <div class="stat-card"><div class="label">Active 7d (WAU)</div><div class="value" id="s-wau">—</div></div>
                     <div class="stat-card"><div class="label">New Installs (7d)</div><div class="value" id="s-new-7d">—</div><div class="sub" id="s-new-today">—</div></div>
@@ -584,6 +585,14 @@
         var now = Date.now();
 
         document.getElementById('s-installs').textContent = num(installs.length);
+
+        // "Ever played" = dealt at least one hand. lastPlayedDate is the
+        // fallback for an install whose hand counter lags the date.
+        var everPlayed = installs.filter(function(p) { return p.hands > 0 || p.lastPlayedDate; }).length;
+        document.getElementById('s-ever-played').textContent = num(everPlayed);
+        document.getElementById('s-ever-played-sub').textContent = installs.length
+            ? Math.round((everPlayed / installs.length) * 100) + '% of installs · ' + num(installs.length - everPlayed) + ' never played'
+            : 'no installs yet';
         document.getElementById('s-today').textContent = num(
             installs.filter(function(p) { return p.lastPlayedDate === today; }).length
         );
