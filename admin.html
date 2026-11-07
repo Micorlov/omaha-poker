@@ -145,6 +145,8 @@
         }
         .stat-card .sub { font-size: 12px; line-height: 18px; color: var(--on-surface-variant); margin-top: 6px; }
         .stat-card .sub .live-dot { width: 6px; height: 6px; }
+        .stat-card.hero { grid-column: span 2; border-color: rgba(0,229,153,0.4); }
+        .stat-card.hero .value { font-size: 44px; line-height: 48px; }
         .stat-card select, .stat-card input { background: var(--inset); color: var(--on-surface); border: 1px solid var(--hairline-strong); border-radius: 4px; padding: 4px 6px; }
 
         /* ---------- Panels & tables ---------- */
@@ -375,6 +377,7 @@
         <div class="content">
             <div class="tabs">
                 <button class="tab active" onclick="switchTab('overview')">Overview</button>
+                <button class="tab" onclick="switchTab('daily')">Daily Users</button>
                 <button class="tab" onclick="switchTab('users')">Users</button>
                 <button class="tab" onclick="switchTab('analytics')">Analytics</button>
                 <button class="tab" onclick="switchTab('events')">Events</button>
@@ -389,9 +392,9 @@
                     <button class="hud-btn" onclick="loadAll()">↻ Refresh</button>
                 </div>
                 <div class="stats-grid">
+                    <div class="stat-card hero"><div class="label">Players Today</div><div class="value" id="s-today">—</div><div class="sub" id="s-today-sub">played a hand (UTC day)</div></div>
                     <div class="stat-card"><div class="label">Total Installs</div><div class="value" id="s-installs">—</div></div>
                     <div class="stat-card"><div class="label">Players Who Ever Played</div><div class="value" id="s-ever-played">—</div><div class="sub" id="s-ever-played-sub">—</div></div>
-                    <div class="stat-card"><div class="label">Active Today</div><div class="value" id="s-today">—</div><div class="sub">played a hand (UTC day)</div></div>
                     <div class="stat-card"><div class="label">Active 7d (WAU)</div><div class="value" id="s-wau">—</div></div>
                     <div class="stat-card"><div class="label">New Installs (7d)</div><div class="value" id="s-new-7d">—</div><div class="sub" id="s-new-today">—</div></div>
                     <div class="stat-card"><div class="label">New Installs (30d)</div><div class="value" id="s-new-30d">—</div></div>
@@ -410,6 +413,28 @@
                     <div class="table-scroll"><table>
                         <thead><tr><th>Install</th><th>Country</th><th>Platform</th><th>Version</th><th>First Seen</th><th>Last Played</th></tr></thead>
                         <tbody id="recent-body"><tr><td colspan="6" class="empty-state">Loading...</td></tr></tbody>
+                    </table></div>
+                </div>
+            </div>
+
+            <!-- DAILY USERS -->
+            <div class="tab-content" id="tab-daily">
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+                    <span class="hud-label" style="color:#849589;font-size:11px">UTC day <span id="daily-date">—</span></span>
+                    <button class="hud-btn" onclick="loadAll()">↻ Refresh</button>
+                </div>
+                <div class="stats-grid">
+                    <div class="stat-card hero"><div class="label">Daily Users</div><div class="value" id="d-today">—</div><div class="sub" id="d-today-sub">played a hand today</div></div>
+                    <div class="stat-card"><div class="label">Hands Today</div><div class="value" id="d-hands">—</div><div class="sub">lifetime hands of today's players</div></div>
+                </div>
+                <div class="panel">
+                    <div class="panel-header">
+                        <h2>Played Today</h2>
+                        <span class="badge" id="daily-count">0</span>
+                    </div>
+                    <div class="table-scroll"><table>
+                        <thead><tr><th>Install</th><th>Country</th><th>Platform</th><th>Version</th><th>Hands</th><th>Play Time</th><th>Balance</th><th>Net P&amp;L</th></tr></thead>
+                        <tbody id="daily-body"><tr><td colspan="8" class="empty-state">Loading...</td></tr></tbody>
                     </table></div>
                 </div>
             </div>
@@ -747,6 +772,7 @@
 
         return Promise.all([installsP, devicesP]).then(function() {
             renderOverview();
+            renderDaily();
             renderUsers();
             renderAnalytics();
         });
@@ -767,9 +793,11 @@
         document.getElementById('s-ever-played-sub').textContent = installs.length
             ? Math.round((everPlayed / installs.length) * 100) + '% of installs · ' + num(installs.length - everPlayed) + ' never played'
             : 'no installs yet';
-        document.getElementById('s-today').textContent = num(
-            installs.filter(function(p) { return p.lastPlayedDate === today; }).length
-        );
+        var playedToday = installs.filter(function(p) { return p.lastPlayedDate === today; }).length;
+        document.getElementById('s-today').textContent = num(playedToday);
+        document.getElementById('s-today-sub').textContent = 'played a hand today (UTC)' + (installs.length
+            ? ' · ' + Math.round((playedToday / installs.length) * 100) + '% of installs'
+            : '');
         document.getElementById('s-wau').textContent = num(
             installs.filter(function(p) { return p.lastPlayedDate && p.lastPlayedDate >= weekAgo; }).length
         );
@@ -821,6 +849,47 @@
                 '<td>' + p.appVersion + '</td>' +
                 '<td>' + p.createdAt.toLocaleDateString() + '</td>' +
                 '<td>' + (p.lastPlayedDate || 'never') + '</td>';
+            body.appendChild(tr);
+        });
+    }
+
+    // --- daily users ---
+    // Only the latest play day is stored per install (no per-day log), so this
+    // shows today's players, not a history. shortcut: add a daily-stats
+    // collection if a DAU trend chart is ever wanted.
+    function renderDaily() {
+        var today = dayKeyDaysAgo(0);
+        var players = installs.filter(function(p) { return p.lastPlayedDate === today; })
+            .sort(function(a, b) { return b.hands - a.hands; });
+
+        document.getElementById('daily-date').textContent = today;
+        document.getElementById('daily-count').textContent = players.length;
+        document.getElementById('d-today').textContent = num(players.length);
+        document.getElementById('d-today-sub').textContent = 'played a hand today' + (installs.length
+            ? ' · ' + Math.round((players.length / installs.length) * 100) + '% of installs'
+            : '');
+        document.getElementById('d-hands').textContent = num(players.reduce(function(sum, p) { return sum + p.hands; }, 0));
+
+        var body = document.getElementById('daily-body');
+        body.innerHTML = '';
+        if (!players.length) {
+            body.innerHTML = '<tr><td colspan="8" class="empty-state">Nobody has played yet today (UTC)</td></tr>';
+            return;
+        }
+        players.slice(0, 500).forEach(function(p) {
+            var cells = [
+                p.uid.slice(0, 10) + '…', p.country, p.platform, p.appVersion,
+                num(p.hands), formatDuration(p.playTimeMs),
+                p.balance === null ? '—' : num(p.balance),
+                (p.netChips > 0 ? '+' : '') + num(p.netChips)
+            ];
+            var tr = document.createElement('tr');
+            cells.forEach(function(text, i) {
+                var td = document.createElement('td');
+                td.textContent = text;
+                if (i === 7) td.style.color = p.netChips < 0 ? '#f87171' : '#4ade80';
+                tr.appendChild(td);
+            });
             body.appendChild(tr);
         });
     }
